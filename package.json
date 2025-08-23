@@ -1,0 +1,17 @@
+{
+  "name": "concentric-circles",
+  "version": "1.0.0",
+  "description": "OpenZeppelin-based ERC721 NFT with on-chain animated concentric circles.",
+  "scripts": {
+    "test": "npx hardhat test",
+    "compile": "npx hardhat compile"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^4.9.0"
+  },
+  "devDependencies": {
+    "hardhat": "^2.22.8",
+    "ethers": "^6.7.0",
+    "chai": "^4.3.7"
+  }
+}
