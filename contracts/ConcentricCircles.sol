@@ -36,23 +36,36 @@ contract ConcentricCircles is ERC721 {
     }
 
     function _generateSVG(uint256 tokenId) internal pure returns (string memory) {
-        string memory circles;
-        for (uint256 i = 0; i < tokenId; i++) {
-            circles = string(abi.encodePacked(
-                circles,
-                '<circle cx="50" cy="50" r="',
-                (10 + i * 2).toString(),
-                '" stroke="black" stroke-width="1" fill="none">',
-                '<animate attributeName="r" values="',
-                (10 + i * 2).toString(), ';', (12 + i * 2).toString(), ';', (10 + i * 2).toString(),
-                '" dur="5s" repeatCount="indefinite" />',
-                '</circle>'
-            ));
-        }
-        return string(abi.encodePacked(
-            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">',
-            circles,
-            '</svg>'
-        ));
+        string memory script = string(
+            abi.encodePacked(
+                "let svg=document.documentElement;",
+                "for(let i=0;i<", tokenId.toString(), ";i++){",
+                    "let c=document.createElementNS(\"http://www.w3.org/2000/svg\",\"circle\");",
+                    "let r=10+i*2;",
+                    "c.setAttribute(\"cx\",\"50\");",
+                    "c.setAttribute(\"cy\",\"50\");",
+                    "c.setAttribute(\"r\",r);",
+                    "c.setAttribute(\"stroke\",\"black\");",
+                    "c.setAttribute(\"stroke-width\",\"1\");",
+                    "c.setAttribute(\"fill\",\"none\");",
+                    "let anim=document.createElementNS(\"http://www.w3.org/2000/svg\",\"animate\");",
+                    "anim.setAttribute(\"attributeName\",\"r\");",
+                    "anim.setAttribute(\"values\",r+\";\"+(r+2)+\";\"+r);",
+                    "anim.setAttribute(\"dur\",\"5s\");",
+                    "anim.setAttribute(\"repeatCount\",\"indefinite\");",
+                    "c.appendChild(anim);",
+                    "svg.appendChild(c);",
+                "}"
+            )
+        );
+        return string(
+            abi.encodePacked(
+                '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">',
+                '<script><![CDATA[',
+                script,
+                ']]></script>',
+                '</svg>'
+            )
+        );
     }
 }
