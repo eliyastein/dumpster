@@ -232,7 +232,7 @@ const video=document.getElementById('cam'),
   loadingEl=document.getElementById('loading'),
   loadMsg=loadingEl.querySelector('p');
 
-let segmenter,paused=false,lastMask=null,lastMaskInt=null,maskW=0,maskH=0;
+let segmenter,paused=false,lastMaskInt=null,maskW=0,maskH=0;
 let fc=0,lt=performance.now(),frame=0;
 let facingMode='environment';
 let lastVideoTime=-1;
@@ -276,34 +276,35 @@ async function initSegmenter(){
   loadMsg.textContent='NEURAL MESH LOADED';
 }
 
-function renderFrame(maskInt,w,h){
+function renderFrame(maskInt,mw,mh){
+  const w=canvas.width,h=canvas.height;
   ctx.drawImage(video,0,0,w,h);
   const img=ctx.getImageData(0,0,w,h);
   const d=img.data;
   const t=frame*.02;
+  const sx=mw/w,sy=mh/h;
 
-  for(let i=0;i<maskInt.length;i++){
+  for(let i=0;i<w*h;i++){
     const pi=i*4;
     const x=i%w,y=(i/w)|0;
-    const cat=maskInt[i];
+    const mi=((y*sy)|0)*mw+((x*sx)|0);
+    const cat=maskInt[mi];
 
-    if(cat>0){
+    if(cat>0&&cat<=20){
       const c=COLORS[cat];
-      // Check all 4 neighbors for thicker visible boundaries
-      const bnd=(x<w-1&&maskInt[i+1]!==cat)||(x>0&&maskInt[i-1]!==cat)||
-                (y<h-1&&maskInt[i+w]!==cat)||(y>0&&maskInt[i-w]!==cat);
+      // Check neighbors in mask space for boundaries
+      const mx=(x*sx)|0,my=(y*sy)|0;
+      const bnd=(mx<mw-1&&maskInt[my*mw+mx+1]!==cat)||(mx>0&&maskInt[my*mw+mx-1]!==cat)||
+                (my<mh-1&&maskInt[(my+1)*mw+mx]!==cat)||(my>0&&maskInt[(my-1)*mw+mx]!==cat);
       if(bnd){
-        // Bright boundary edge
         d[pi]=c[0];d[pi+1]=c[1];d[pi+2]=c[2];
       }else{
-        // Strong fill with pulse — keeps original brightness
         const p=Math.sin(t+x*.02+y*.02)*.1+.24;
         d[pi]=d[pi]+(c[0]-d[pi])*p|0;
         d[pi+1]=d[pi+1]+(c[1]-d[pi+1])*p|0;
         d[pi+2]=d[pi+2]+(c[2]-d[pi+2])*p|0;
       }
     }else{
-      // Darken background with slight green tint
       d[pi]=d[pi]*.5|0;
       d[pi+1]=d[pi+1]*.58|0;
       d[pi+2]=d[pi+2]*.5|0;
@@ -311,7 +312,6 @@ function renderFrame(maskInt,w,h){
   }
   ctx.putImageData(img,0,0);
 
-  // Scrolling grid overlay — scanner aesthetic
   ctx.save();
   ctx.strokeStyle='rgba(0,255,170,0.04)';
   ctx.lineWidth=0.5;
@@ -333,8 +333,12 @@ function clientToMask(cx,cy){
   const cw=rect.width,ch=rect.height,nw=canvas.width,nh=canvas.height;
   const scale=Math.max(cw/nw,ch/nh);
   const ox=(nw*scale-cw)/2,oy=(nh*scale-ch)/2;
-  const mx=Math.round(((cx-rect.left)+ox)/scale);
-  const my=Math.round(((cy-rect.top)+oy)/scale);
+  // Map to canvas pixel coordinates
+  const canvasX=((cx-rect.left)+ox)/scale;
+  const canvasY=((cy-rect.top)+oy)/scale;
+  // Scale from canvas coords to mask coords
+  const mx=Math.round(canvasX*maskW/nw);
+  const my=Math.round(canvasY*maskH/nh);
   return[Math.max(0,Math.min(mx,maskW-1)),Math.max(0,Math.min(my,maskH-1))];
 }
 
@@ -358,34 +362,31 @@ function loop(){
       try{
         const result=segmenter.segmentForVideo(video,now);
         if(result&&result.categoryMask){
-          const mask=result.categoryMask.getAsFloat32Array();
+          const rawMask=result.categoryMask.getAsUint8Array();
           maskW=result.categoryMask.width;
           maskH=result.categoryMask.height;
 
-          const intMask=new Uint8Array(mask.length);
+          // Direct copy — uint8 values ARE category IDs (0-20)
+          const intMask=new Uint8Array(rawMask);
           const cats=new Set();
           let nonZero=0;
-          for(let i=0;i<mask.length;i++){
-            const v=Math.round(mask[i]*255);
-            intMask[i]=v;
-            if(v>0){nonZero++;cats.add(v);}
+          for(let i=0;i<intMask.length;i++){
+            if(intMask[i]>0){nonZero++;cats.add(intMask[i]);}
           }
-          lastMask=new Float32Array(mask);
           lastMaskInt=intMask;
           segCount++;
 
-          const cx=Math.floor(mask.length/2);
-          const sample=[mask[cx-2],mask[cx-1],mask[cx],mask[cx+1],mask[cx+2]]
-            .map(v=>v.toFixed(4)).join(',');
+          const cx=Math.floor(intMask.length/2);
+          const sample=[intMask[cx-2],intMask[cx-1],intMask[cx],intMask[cx+1],intMask[cx+2]].join(',');
 
           if(nonZero>0){
             statusEl.textContent='TRACKING '+cats.size+' LAYER'+(cats.size>1?'S':'');
             statusEl.style.color='#0fa';
-            dbg('#'+segCount+' '+maskW+'x'+maskH+' nz='+nonZero+' cats=['+[...cats]+'] mid=['+sample+']');
+            dbg('#'+segCount+' '+maskW+'x'+maskH+' nz='+nonZero+' cats=['+[...cats]+'] mid='+sample+' cv='+canvas.width+'x'+canvas.height);
           }else{
             statusEl.textContent='SCANNING...';
             statusEl.style.color='#555';
-            dbg('#'+segCount+' '+maskW+'x'+maskH+' ALL ZERO mid=['+sample+']');
+            dbg('#'+segCount+' '+maskW+'x'+maskH+' ALL ZERO mid='+sample);
           }
 
           renderFrame(intMask,maskW,maskH);
@@ -451,8 +452,11 @@ document.addEventListener('click',e=>{
   }
 
   const[mx,my]=clientToMask(e.clientX,e.clientY);
-  const cat=lastMaskInt[my*maskW+mx]||0;
+  const idx=my*maskW+mx;
+  const cat=lastMaskInt[idx]||0;
   const label=LABELS[cat]||'UNKNOWN';
+  // Show tap debug — mask value at tap location
+  dbg('TAP('+mx+','+my+') idx='+idx+' raw='+lastMaskInt[idx]+' cat='+cat+' => '+label+' mask='+maskW+'x'+maskH);
 
   const img=hlCtx.createImageData(maskW,maskH);
   const d=img.data;
