@@ -15,29 +15,28 @@ video{
   position:fixed;top:0;left:0;width:100%;height:100%;
   object-fit:cover;z-index:0;
 }
-canvas{
+#view{
+  position:fixed;top:0;left:0;width:100%;height:100%;
+  object-fit:cover;z-index:1;
+}
+#highlight{
   position:fixed;top:0;left:0;width:100%;height:100%;
   object-fit:cover;image-rendering:pixelated;
-  pointer-events:none;will-change:transform;
+  pointer-events:none;z-index:2;opacity:0;transition:opacity .3s;
 }
-#overlay{z-index:1;mix-blend-mode:screen;opacity:.8}
-#highlight{z-index:2;mix-blend-mode:screen;opacity:0;transition:opacity .3s}
 #highlight.visible{opacity:1;animation:flash .5s ease-out}
 @keyframes flash{0%{opacity:.9}100%{opacity:.5}}
 
-/* Scanlines */
 .scanlines{
   position:fixed;top:0;left:0;width:100%;height:100%;
   background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.12) 2px,rgba(0,0,0,.12) 4px);
   pointer-events:none;z-index:10;
 }
-/* Vignette */
 .vignette{
   position:fixed;top:0;left:0;width:100%;height:100%;
   background:radial-gradient(ellipse at center,transparent 40%,rgba(0,0,0,.85) 100%);
   pointer-events:none;z-index:11;
 }
-/* Scan beam */
 .scan-beam{
   position:fixed;left:0;width:100%;height:2px;
   background:linear-gradient(90deg,transparent 5%,rgba(0,255,170,.5) 50%,transparent 95%);
@@ -46,11 +45,8 @@ canvas{
 }
 @keyframes beam{0%{top:-2px}100%{top:100%}}
 
-/* Corner reticle */
 .reticle{position:fixed;pointer-events:none;z-index:13}
-.reticle::before,.reticle::after{
-  content:'';position:absolute;background:#0fa;
-}
+.reticle::before,.reticle::after{content:'';position:absolute;background:#0fa}
 .r-tl{top:16px;left:16px}.r-tl::before{width:28px;height:1px;top:0;left:0}
 .r-tl::after{width:1px;height:28px;top:0;left:0}
 .r-tr{top:16px;right:16px}.r-tr::before{width:28px;height:1px;top:0;right:0}
@@ -60,7 +56,6 @@ canvas{
 .r-br{bottom:16px;right:16px}.r-br::before{width:28px;height:1px;bottom:0;right:0}
 .r-br::after{width:1px;height:28px;bottom:0;right:0}
 
-/* HUD */
 #hud{
   position:fixed;top:0;left:0;width:100%;padding:20px 22px;
   z-index:20;display:flex;justify-content:space-between;align-items:flex-start;
@@ -72,9 +67,9 @@ canvas{
 }
 @keyframes pulse{0%,100%{opacity:.6}50%{opacity:1}}
 #status{color:#555;font-size:9px;letter-spacing:2px;margin-top:4px}
+#debug{color:#f80;font-size:8px;letter-spacing:1px;margin-top:2px;max-width:70vw;word-break:break-all;line-height:1.4}
 #fps{color:#444;font-size:9px;letter-spacing:1px}
 
-/* Buttons */
 #controls{
   position:fixed;bottom:36px;left:0;width:100%;
   display:flex;justify-content:center;gap:14px;z-index:20;
@@ -90,7 +85,6 @@ canvas{
 .btn.paused{border-color:#f80;color:#f80;box-shadow:0 0 12px rgba(255,136,0,.25),inset 0 0 12px rgba(255,136,0,.08)}
 .btn-sm{padding:13px 16px}
 
-/* Enhance panel */
 #enhancePanel{
   display:none;position:fixed;z-index:25;
   background:rgba(0,8,6,.92);border:1px solid #0fa;
@@ -113,7 +107,6 @@ canvas{
   white-space:pre-line;min-height:40px;
 }
 
-/* Tap ring */
 .tap-ring{
   position:fixed;pointer-events:none;z-index:22;
   border:1px solid #0fa;border-radius:50%;
@@ -124,9 +117,7 @@ canvas{
   0%{width:8px;height:8px;opacity:1;border-width:2px}
   100%{width:100px;height:100px;opacity:0;border-width:1px}
 }
-.tap-ring:nth-child(odd){animation-duration:.5s;border-color:rgba(0,255,170,.5)}
 
-/* Loading */
 #loading{
   position:fixed;top:0;left:0;width:100%;height:100%;background:#000;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -155,7 +146,7 @@ canvas{
 </div>
 
 <video id="cam" autoplay playsinline muted></video>
-<canvas id="overlay"></canvas>
+<canvas id="view"></canvas>
 <canvas id="highlight"></canvas>
 
 <div class="scanlines"></div>
@@ -170,6 +161,7 @@ canvas{
   <div>
     <div id="title">BIOMECH::SIGHT</div>
     <div id="status">SCANNING</div>
+    <div id="debug"></div>
   </div>
   <div id="fps"></div>
 </div>
@@ -186,8 +178,9 @@ canvas{
 </div>
 
 <script type="module">
+// Pin to 0.10.12 — proven working version from official examples
 import {ImageSegmenter,FilesetResolver} from
-  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs';
+  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.12/vision_bundle.mjs';
 
 const LABELS=['BACKGROUND','AEROPLANE','BICYCLE','BIRD','BOAT','BOTTLE',
   'BUS','CAR','CAT','CHAIR','COW','TABLE','DOG','HORSE',
@@ -225,7 +218,7 @@ const INFO={
 };
 
 const video=document.getElementById('cam'),
-  canvas=document.getElementById('overlay'),
+  canvas=document.getElementById('view'),
   hlCanvas=document.getElementById('highlight'),
   ctx=canvas.getContext('2d',{willReadFrequently:true}),
   hlCtx=hlCanvas.getContext('2d'),
@@ -236,75 +229,88 @@ const video=document.getElementById('cam'),
   objInfo=document.getElementById('objInfo'),
   fpsEl=document.getElementById('fps'),
   statusEl=document.getElementById('status'),
+  debugEl=document.getElementById('debug'),
   loadingEl=document.getElementById('loading'),
   loadMsg=loadingEl.querySelector('p');
 
-let segmenter,paused=false,lastMask=null,maskW=0,maskH=0;
+let segmenter,paused=false,lastMask=null,lastMaskInt=null,maskW=0,maskH=0;
 let fc=0,lt=performance.now(),frame=0;
 let facingMode='environment';
 let lastVideoTime=-1;
 
-function showErr(msg){statusEl.textContent='ERR: '+msg;statusEl.style.color='#f44';}
+function dbg(msg){debugEl.textContent=msg;}
 
 // --- Camera ---
 async function initCamera(){
   loadMsg.textContent='ACCESSING OPTIC FEED...';
   const stream=await navigator.mediaDevices.getUserMedia({
-    video:{facingMode,width:{ideal:480},height:{ideal:640}},audio:false
+    video:{facingMode,width:{ideal:640},height:{ideal:480}},audio:false
   });
   video.srcObject=stream;
-  await new Promise(r=>{video.onloadeddata=r;video.play()});
+  await video.play();
+  // Ensure dimensions are available
+  while(video.videoWidth===0) await new Promise(r=>setTimeout(r,50));
   canvas.width=video.videoWidth;
   canvas.height=video.videoHeight;
   hlCanvas.width=video.videoWidth;
   hlCanvas.height=video.videoHeight;
-  loadMsg.textContent='OPTIC FEED ONLINE ['+video.videoWidth+'x'+video.videoHeight+']';
+  dbg('cam:'+video.videoWidth+'x'+video.videoHeight);
+  loadMsg.textContent='OPTIC FEED ['+video.videoWidth+'x'+video.videoHeight+']';
 }
 
 // --- MediaPipe ---
 async function initSegmenter(){
   loadMsg.textContent='LOADING VISION WASM...';
+  dbg('loading wasm 0.10.12...');
   const vision=await FilesetResolver.forVisionTasks(
-    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
+    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.12/wasm'
   );
   loadMsg.textContent='LOADING NEURAL MODEL...';
+  dbg('loading deeplab_v3 model...');
   segmenter=await ImageSegmenter.createFromOptions(vision,{
     baseOptions:{
-      modelAssetPath:'https://storage.googleapis.com/mediapipe-models/image_segmenter/deeplab_v3/float32/1/deeplab_v3.tflite',
+      modelAssetPath:'https://storage.googleapis.com/mediapipe-models/image_segmenter/deeplab_v3/float32/latest/deeplab_v3.tflite',
       delegate:'GPU'
     },
     runningMode:'VIDEO',
     outputCategoryMask:true,
     outputConfidenceMasks:false
   });
+  dbg('segmenter ready');
   loadMsg.textContent='NEURAL MESH LOADED';
 }
 
-// --- Render segmentation overlay ---
-function renderOverlay(mask,w,h){
-  const img=ctx.createImageData(w,h);
+// --- Render composited frame ---
+function renderFrame(maskInt,w,h){
+  ctx.drawImage(video,0,0,w,h);
+  const img=ctx.getImageData(0,0,w,h);
   const d=img.data;
   const t=frame*.02;
-  for(let i=0;i<mask.length;i++){
-    const cat=mask[i];
-    const x=i%w,y=(i/w)|0;
-    const right=x<w-1?mask[i+1]:cat;
-    const down=y<h-1?mask[i+w]:cat;
-    const isEdge=right!==cat||down!==cat;
+  for(let i=0;i<maskInt.length;i++){
+    const cat=maskInt[i];
+    if(cat===0)continue;
     const pi=i*4;
+    const x=i%w,y=(i/w)|0;
+    const right=x<w-1?maskInt[i+1]:cat;
+    const down=y<h-1?maskInt[i+w]:cat;
+    const isEdge=right!==cat||down!==cat;
+    const c=COLORS[cat]||[0,255,170];
     if(isEdge){
-      const c=COLORS[cat]||COLORS[right!==cat?(right||1):1]||[0,255,170];
-      d[pi]=c[0];d[pi+1]=c[1];d[pi+2]=c[2];d[pi+3]=220;
-    }else if(cat>0){
-      const c=COLORS[cat];
-      const p=Math.sin(t+x*.015+y*.015)*.3+.7;
-      d[pi]=(c[0]*p)|0;d[pi+1]=(c[1]*p)|0;d[pi+2]=(c[2]*p)|0;d[pi+3]=60;
+      d[pi]=c[0];d[pi+1]=c[1];d[pi+2]=c[2];
+    }else{
+      const p=Math.sin(t+x*.015+y*.015)*.15+.15;
+      d[pi]=d[pi]+(c[0]-d[pi])*p|0;
+      d[pi+1]=d[pi+1]+(c[1]-d[pi+1])*p|0;
+      d[pi+2]=d[pi+2]+(c[2]-d[pi+2])*p|0;
     }
   }
   ctx.putImageData(img,0,0);
 }
 
-// --- Map click to mask coords (accounting for object-fit:cover) ---
+function renderVideoOnly(){
+  ctx.drawImage(video,0,0,canvas.width,canvas.height);
+}
+
 function clientToMask(cx,cy){
   const rect=canvas.getBoundingClientRect();
   const cw=rect.width,ch=rect.height,nw=canvas.width,nh=canvas.height;
@@ -315,7 +321,6 @@ function clientToMask(cx,cy){
   return[Math.max(0,Math.min(mx,maskW-1)),Math.max(0,Math.min(my,maskH-1))];
 }
 
-// --- Typewriter ---
 function typewrite(el,text,speed=18){
   el.textContent='';let i=0;
   const id=setInterval(()=>{
@@ -325,41 +330,68 @@ function typewrite(el,text,speed=18){
 }
 
 // --- Main loop ---
+let segCount=0;
 function loop(){
   if(!paused&&segmenter){
     const now=performance.now();
     fc++;
     if(now-lt>1000){fpsEl.textContent=fc+'FPS';fc=0;lt=now;}
-    // Only process new frames
+
     if(video.currentTime!==lastVideoTime){
       lastVideoTime=video.currentTime;
       try{
-        segmenter.segmentForVideo(video,now,(result)=>{
-          if(result.categoryMask){
-            const m=result.categoryMask.getAsUint8Array();
-            maskW=result.categoryMask.width;
-            maskH=result.categoryMask.height;
-            lastMask=new Uint8Array(m);
-            // Show detected layers in HUD
-            const cats=new Set(m);
-            cats.delete(0);
-            const n=cats.size;
-            if(n>0){
-              statusEl.textContent='TRACKING '+n+' LAYER'+(n>1?'S':'');
-              statusEl.style.color='#0fa';
-            }else{
-              statusEl.textContent='SCANNING...';
-              statusEl.style.color='#555';
-            }
-            renderOverlay(lastMask,maskW,maskH);
+        // Use return-value pattern (synchronous)
+        const result=segmenter.segmentForVideo(video,now);
+        if(result&&result.categoryMask){
+          const mask=result.categoryMask.getAsFloat32Array();
+          maskW=result.categoryMask.width;
+          maskH=result.categoryMask.height;
+
+          // Convert float->int and count non-bg
+          const intMask=new Uint8Array(mask.length);
+          const cats=new Set();
+          let nonZero=0;
+          for(let i=0;i<mask.length;i++){
+            const v=Math.round(mask[i]*255);
+            intMask[i]=v;
+            if(v>0){nonZero++;cats.add(v);}
           }
+          lastMask=new Float32Array(mask);
+          lastMaskInt=intMask;
+          segCount++;
+
+          // Debug: show raw values at center
+          const cx=Math.floor(mask.length/2);
+          const sample=[mask[cx-2],mask[cx-1],mask[cx],mask[cx+1],mask[cx+2]]
+            .map(v=>v.toFixed(4)).join(',');
+
+          if(nonZero>0){
+            statusEl.textContent='TRACKING '+cats.size+' LAYER'+(cats.size>1?'S':'');
+            statusEl.style.color='#0fa';
+            dbg('#'+segCount+' '+maskW+'x'+maskH+' nz='+nonZero+' cats=['+[...cats]+'] mid=['+sample+']');
+          }else{
+            statusEl.textContent='SCANNING...';
+            statusEl.style.color='#555';
+            dbg('#'+segCount+' '+maskW+'x'+maskH+' ALL ZERO mid=['+sample+']');
+          }
+
+          renderFrame(intMask,maskW,maskH);
           result.close();
-        });
+        }else{
+          dbg('no categoryMask keys='+(result?Object.keys(result):'null'));
+          renderVideoOnly();
+          if(result)result.close();
+        }
       }catch(e){
-        showErr(e.message);
+        dbg('ERR:'+e.message);
+        renderVideoOnly();
       }
+    }else{
+      renderVideoOnly();
     }
     frame++;
+  }else if(!paused&&video.readyState>=2){
+    renderVideoOnly();
   }
   requestAnimationFrame(loop);
 }
@@ -396,10 +428,9 @@ flipBtn.addEventListener('click',async()=>{
 
 // --- Tap to enhance ---
 document.addEventListener('click',e=>{
-  if(!paused||!lastMask)return;
+  if(!paused||!lastMaskInt)return;
   if(e.target.closest('#controls'))return;
 
-  // Tap ring effect
   for(let r=0;r<2;r++){
     const ring=document.createElement('div');
     ring.className='tap-ring';
@@ -410,17 +441,16 @@ document.addEventListener('click',e=>{
   }
 
   const[mx,my]=clientToMask(e.clientX,e.clientY);
-  const cat=lastMask[my*maskW+mx]||0;
+  const cat=lastMaskInt[my*maskW+mx]||0;
   const label=LABELS[cat]||'UNKNOWN';
 
-  // Highlight tapped segment
   const img=hlCtx.createImageData(maskW,maskH);
   const d=img.data;
   const c=COLORS[cat]||[0,255,170];
-  for(let i=0;i<lastMask.length;i++){
-    if(lastMask[i]===cat){
+  for(let i=0;i<lastMaskInt.length;i++){
+    if(lastMaskInt[i]===cat){
       const pi=i*4;
-      d[pi]=c[0];d[pi+1]=c[1];d[pi+2]=c[2];d[pi+3]=90;
+      d[pi]=c[0];d[pi+1]=c[1];d[pi+2]=c[2];d[pi+3]=100;
     }
   }
   hlCtx.putImageData(img,0,0);
@@ -428,7 +458,6 @@ document.addEventListener('click',e=>{
   void hlCanvas.offsetWidth;
   hlCanvas.classList.add('visible');
 
-  // Enhance panel
   objLabel.textContent='\u25C9 '+label;
   const infoText=INFO[label]||'TYPE: '+label+'\nSTATUS: CLASSIFIED\nDATA: INSUFFICIENT';
   typewrite(objInfo,infoText);
@@ -453,6 +482,7 @@ async function boot(){
   }catch(err){
     loadMsg.textContent='ERR: '+err.message;
     loadMsg.style.color='#f44';
+    dbg('BOOT FAIL: '+err.message+' '+err.stack);
   }
 }
 boot();
