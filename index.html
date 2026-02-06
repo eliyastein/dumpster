@@ -282,62 +282,46 @@ function renderFrame(maskInt,w,h){
   const d=img.data;
   const t=frame*.02;
 
-  // Precompute grayscale for edge detection
-  const gray=new Uint8Array(w*h);
-  for(let i=0;i<gray.length;i++){
-    const pi=i*4;
-    gray[i]=(d[pi]*77+d[pi+1]*150+d[pi+2]*29)>>8;
-  }
-
   for(let i=0;i<maskInt.length;i++){
     const pi=i*4;
     const x=i%w,y=(i/w)|0;
     const cat=maskInt[i];
 
-    // Edge detection: gradient magnitude on grayscale
-    let edge=0;
-    if(x>0&&x<w-1&&y>0&&y<h-1){
-      edge=Math.abs(gray[i]-gray[i+1])+Math.abs(gray[i]-gray[i+w]);
-    }
-
-    // Segment boundary detection
-    const segEdge=cat>0&&(
-      (x<w-1&&maskInt[i+1]!==cat)||(y<h-1&&maskInt[i+w]!==cat));
-
-    // Darken base for scanner look
-    d[pi]=d[pi]*0.55|0;
-    d[pi+1]=d[pi+1]*0.55|0;
-    d[pi+2]=d[pi+2]*0.55|0;
-
-    if(segEdge){
-      // Segment boundary — bright colored edge
-      const c=COLORS[cat]||[0,255,170];
-      d[pi]=c[0];d[pi+1]=c[1];d[pi+2]=c[2];
-    }else if(edge>18){
-      // Visual edge detected — glowing wireframe
-      const intensity=Math.min(edge*4,255);
-      if(cat>0){
-        // Edge inside a known segment — use segment color
-        const c=COLORS[cat]||[0,255,170];
-        d[pi]=Math.min(d[pi]+c[0]*intensity/255|0,255);
-        d[pi+1]=Math.min(d[pi+1]+c[1]*intensity/255|0,255);
-        d[pi+2]=Math.min(d[pi+2]+c[2]*intensity/255|0,255);
-      }else{
-        // Edge in background — cyan/teal wireframe
-        d[pi]=Math.min(d[pi]+(intensity*0.12|0),255);
-        d[pi+1]=Math.min(d[pi+1]+(intensity*0.75|0),255);
-        d[pi+2]=Math.min(d[pi+2]+(intensity*0.55|0),255);
-      }
-    }else if(cat>0){
-      // Inside segment fill — color tint with pulse
+    if(cat>0){
       const c=COLORS[cat];
-      const p=Math.sin(t+x*.015+y*.015)*.12+.14;
-      d[pi]=d[pi]+(c[0]-d[pi])*p|0;
-      d[pi+1]=d[pi+1]+(c[1]-d[pi+1])*p|0;
-      d[pi+2]=d[pi+2]+(c[2]-d[pi+2])*p|0;
+      // Check all 4 neighbors for thicker visible boundaries
+      const bnd=(x<w-1&&maskInt[i+1]!==cat)||(x>0&&maskInt[i-1]!==cat)||
+                (y<h-1&&maskInt[i+w]!==cat)||(y>0&&maskInt[i-w]!==cat);
+      if(bnd){
+        // Bright boundary edge
+        d[pi]=c[0];d[pi+1]=c[1];d[pi+2]=c[2];
+      }else{
+        // Strong fill with pulse — keeps original brightness
+        const p=Math.sin(t+x*.02+y*.02)*.1+.24;
+        d[pi]=d[pi]+(c[0]-d[pi])*p|0;
+        d[pi+1]=d[pi+1]+(c[1]-d[pi+1])*p|0;
+        d[pi+2]=d[pi+2]+(c[2]-d[pi+2])*p|0;
+      }
+    }else{
+      // Darken background with slight green tint
+      d[pi]=d[pi]*.5|0;
+      d[pi+1]=d[pi+1]*.58|0;
+      d[pi+2]=d[pi+2]*.5|0;
     }
   }
   ctx.putImageData(img,0,0);
+
+  // Scrolling grid overlay — scanner aesthetic
+  ctx.save();
+  ctx.strokeStyle='rgba(0,255,170,0.04)';
+  ctx.lineWidth=0.5;
+  const gs=36;
+  const drift=(frame*.25)%gs;
+  ctx.beginPath();
+  for(let gx=drift;gx<w;gx+=gs){ctx.moveTo(gx,0);ctx.lineTo(gx,h);}
+  for(let gy=drift;gy<h;gy+=gs){ctx.moveTo(0,gy);ctx.lineTo(w,gy);}
+  ctx.stroke();
+  ctx.restore();
 }
 
 function renderVideoOnly(){
