@@ -187,7 +187,7 @@ canvas{
 
 <script type="module">
 import {ImageSegmenter,FilesetResolver} from
-  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs';
+  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs';
 
 const LABELS=['BACKGROUND','AEROPLANE','BICYCLE','BIRD','BOAT','BOTTLE',
   'BUS','CAR','CAT','CHAIR','COW','TABLE','DOG','HORSE',
@@ -236,38 +236,48 @@ const video=document.getElementById('cam'),
   objInfo=document.getElementById('objInfo'),
   fpsEl=document.getElementById('fps'),
   statusEl=document.getElementById('status'),
-  loadingEl=document.getElementById('loading');
+  loadingEl=document.getElementById('loading'),
+  loadMsg=loadingEl.querySelector('p');
 
 let segmenter,paused=false,lastMask=null,maskW=0,maskH=0;
 let fc=0,lt=performance.now(),frame=0;
 let facingMode='environment';
+let lastVideoTime=-1;
+
+function showErr(msg){statusEl.textContent='ERR: '+msg;statusEl.style.color='#f44';}
 
 // --- Camera ---
 async function initCamera(){
+  loadMsg.textContent='ACCESSING OPTIC FEED...';
   const stream=await navigator.mediaDevices.getUserMedia({
     video:{facingMode,width:{ideal:480},height:{ideal:640}},audio:false
   });
   video.srcObject=stream;
-  await video.play();
+  await new Promise(r=>{video.onloadeddata=r;video.play()});
   canvas.width=video.videoWidth;
   canvas.height=video.videoHeight;
   hlCanvas.width=video.videoWidth;
   hlCanvas.height=video.videoHeight;
+  loadMsg.textContent='OPTIC FEED ONLINE ['+video.videoWidth+'x'+video.videoHeight+']';
 }
 
 // --- MediaPipe ---
 async function initSegmenter(){
+  loadMsg.textContent='LOADING VISION WASM...';
   const vision=await FilesetResolver.forVisionTasks(
-    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
   );
+  loadMsg.textContent='LOADING NEURAL MODEL...';
   segmenter=await ImageSegmenter.createFromOptions(vision,{
     baseOptions:{
       modelAssetPath:'https://storage.googleapis.com/mediapipe-models/image_segmenter/deeplab_v3/float32/1/deeplab_v3.tflite',
       delegate:'GPU'
     },
     runningMode:'VIDEO',
-    outputCategoryMask:true
+    outputCategoryMask:true,
+    outputConfidenceMasks:false
   });
+  loadMsg.textContent='NEURAL MESH LOADED';
 }
 
 // --- Render segmentation overlay ---
@@ -283,13 +293,12 @@ function renderOverlay(mask,w,h){
     const isEdge=right!==cat||down!==cat;
     const pi=i*4;
     if(isEdge){
-      // Glowing edge
       const c=COLORS[cat]||COLORS[right!==cat?(right||1):1]||[0,255,170];
-      d[pi]=c[0];d[pi+1]=c[1];d[pi+2]=c[2];d[pi+3]=200;
+      d[pi]=c[0];d[pi+1]=c[1];d[pi+2]=c[2];d[pi+3]=220;
     }else if(cat>0){
       const c=COLORS[cat];
       const p=Math.sin(t+x*.015+y*.015)*.3+.7;
-      d[pi]=(c[0]*p)|0;d[pi+1]=(c[1]*p)|0;d[pi+2]=(c[2]*p)|0;d[pi+3]=30;
+      d[pi]=(c[0]*p)|0;d[pi+1]=(c[1]*p)|0;d[pi+2]=(c[2]*p)|0;d[pi+3]=60;
     }
   }
   ctx.putImageData(img,0,0);
@@ -321,17 +330,35 @@ function loop(){
     const now=performance.now();
     fc++;
     if(now-lt>1000){fpsEl.textContent=fc+'FPS';fc=0;lt=now;}
-    try{
-      const result=segmenter.segmentForVideo(video,now);
-      if(result.categoryMask){
-        const m=result.categoryMask.getAsUint8Array();
-        maskW=result.categoryMask.width;
-        maskH=result.categoryMask.height;
-        lastMask=new Uint8Array(m);
-        renderOverlay(lastMask,maskW,maskH);
-        result.categoryMask.close();
+    // Only process new frames
+    if(video.currentTime!==lastVideoTime){
+      lastVideoTime=video.currentTime;
+      try{
+        segmenter.segmentForVideo(video,now,(result)=>{
+          if(result.categoryMask){
+            const m=result.categoryMask.getAsUint8Array();
+            maskW=result.categoryMask.width;
+            maskH=result.categoryMask.height;
+            lastMask=new Uint8Array(m);
+            // Show detected layers in HUD
+            const cats=new Set(m);
+            cats.delete(0);
+            const n=cats.size;
+            if(n>0){
+              statusEl.textContent='TRACKING '+n+' LAYER'+(n>1?'S':'');
+              statusEl.style.color='#0fa';
+            }else{
+              statusEl.textContent='SCANNING...';
+              statusEl.style.color='#555';
+            }
+            renderOverlay(lastMask,maskW,maskH);
+          }
+          result.close();
+        });
+      }catch(e){
+        showErr(e.message);
       }
-    }catch(e){}
+    }
     frame++;
   }
   requestAnimationFrame(loop);
@@ -351,10 +378,11 @@ pauseBtn.addEventListener('click',()=>{
     pauseBtn.innerHTML='&#9632; PAUSE';
     pauseBtn.classList.remove('paused');
     statusEl.textContent='SCANNING';
-    statusEl.style.color='';
+    statusEl.style.color='#555';
     panel.classList.remove('visible');
     hlCanvas.classList.remove('visible');
     hlCtx.clearRect(0,0,hlCanvas.width,hlCanvas.height);
+    lastVideoTime=-1;
   }
 });
 
@@ -363,6 +391,7 @@ flipBtn.addEventListener('click',async()=>{
   facingMode=facingMode==='environment'?'user':'environment';
   video.srcObject.getTracks().forEach(t=>t.stop());
   await initCamera();
+  lastVideoTime=-1;
 });
 
 // --- Tap to enhance ---
@@ -396,7 +425,7 @@ document.addEventListener('click',e=>{
   }
   hlCtx.putImageData(img,0,0);
   hlCanvas.classList.remove('visible');
-  void hlCanvas.offsetWidth; // reflow for re-trigger animation
+  void hlCanvas.offsetWidth;
   hlCanvas.classList.add('visible');
 
   // Enhance panel
@@ -415,13 +444,15 @@ document.addEventListener('click',e=>{
 // --- Boot ---
 async function boot(){
   try{
-    await Promise.all([initCamera(),initSegmenter()]);
+    await initCamera();
+    await initSegmenter();
+    loadMsg.textContent='ALL SYSTEMS ONLINE';
     loadingEl.classList.add('hidden');
     setTimeout(()=>loadingEl.style.display='none',600);
     loop();
   }catch(err){
-    loadingEl.querySelector('p').textContent='ERR: '+err.message;
-    loadingEl.querySelector('p').style.color='#f44';
+    loadMsg.textContent='ERR: '+err.message;
+    loadMsg.style.color='#f44';
   }
 }
 boot();
