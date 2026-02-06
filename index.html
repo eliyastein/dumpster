@@ -281,19 +281,57 @@ function renderFrame(maskInt,w,h){
   const img=ctx.getImageData(0,0,w,h);
   const d=img.data;
   const t=frame*.02;
+
+  // Precompute grayscale for edge detection
+  const gray=new Uint8Array(w*h);
+  for(let i=0;i<gray.length;i++){
+    const pi=i*4;
+    gray[i]=(d[pi]*77+d[pi+1]*150+d[pi+2]*29)>>8;
+  }
+
   for(let i=0;i<maskInt.length;i++){
-    const cat=maskInt[i];
-    if(cat===0)continue;
     const pi=i*4;
     const x=i%w,y=(i/w)|0;
-    const right=x<w-1?maskInt[i+1]:cat;
-    const down=y<h-1?maskInt[i+w]:cat;
-    const isEdge=right!==cat||down!==cat;
-    const c=COLORS[cat]||[0,255,170];
-    if(isEdge){
+    const cat=maskInt[i];
+
+    // Edge detection: gradient magnitude on grayscale
+    let edge=0;
+    if(x>0&&x<w-1&&y>0&&y<h-1){
+      edge=Math.abs(gray[i]-gray[i+1])+Math.abs(gray[i]-gray[i+w]);
+    }
+
+    // Segment boundary detection
+    const segEdge=cat>0&&(
+      (x<w-1&&maskInt[i+1]!==cat)||(y<h-1&&maskInt[i+w]!==cat));
+
+    // Darken base for scanner look
+    d[pi]=d[pi]*0.55|0;
+    d[pi+1]=d[pi+1]*0.55|0;
+    d[pi+2]=d[pi+2]*0.55|0;
+
+    if(segEdge){
+      // Segment boundary — bright colored edge
+      const c=COLORS[cat]||[0,255,170];
       d[pi]=c[0];d[pi+1]=c[1];d[pi+2]=c[2];
-    }else{
-      const p=Math.sin(t+x*.015+y*.015)*.15+.15;
+    }else if(edge>18){
+      // Visual edge detected — glowing wireframe
+      const intensity=Math.min(edge*4,255);
+      if(cat>0){
+        // Edge inside a known segment — use segment color
+        const c=COLORS[cat]||[0,255,170];
+        d[pi]=Math.min(d[pi]+c[0]*intensity/255|0,255);
+        d[pi+1]=Math.min(d[pi+1]+c[1]*intensity/255|0,255);
+        d[pi+2]=Math.min(d[pi+2]+c[2]*intensity/255|0,255);
+      }else{
+        // Edge in background — cyan/teal wireframe
+        d[pi]=Math.min(d[pi]+(intensity*0.12|0),255);
+        d[pi+1]=Math.min(d[pi+1]+(intensity*0.75|0),255);
+        d[pi+2]=Math.min(d[pi+2]+(intensity*0.55|0),255);
+      }
+    }else if(cat>0){
+      // Inside segment fill — color tint with pulse
+      const c=COLORS[cat];
+      const p=Math.sin(t+x*.015+y*.015)*.12+.14;
       d[pi]=d[pi]+(c[0]-d[pi])*p|0;
       d[pi+1]=d[pi+1]+(c[1]-d[pi+1])*p|0;
       d[pi+2]=d[pi+2]+(c[2]-d[pi+2])*p|0;
