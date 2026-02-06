@@ -1,59 +1,18 @@
-# Concentric Circles NFT
+# BIOMECH::SIGHT
 
-This repository contains a simple Hardhat project that implements an on-chain animated ERC721 token. Each token renders a set of SVG circles that grow and shrink, creating a concentric animation generated completely on-chain.
+Minority Report-style augmented reality segmentation app. Runs entirely in mobile browser.
 
-## Project Structure
+- Activates camera and uses MediaPipe DeepLabV3 to segment objects, people, animals, vehicles in real-time
+- Trippy biomechanical overlay with glowing segment edges and pulsing fills
+- HR Giger-inspired dark aesthetic with scanlines, vignette, and scan beam
+- **Pause** to freeze the frame, **tap any object** to enhance and get analysis data
+- **Resume** to continue scanning
+- Flip camera button for front/rear
 
-- **contracts/ConcentricCircles.sol** – ERC721 contract built on top of OpenZeppelin. The `mint` function allows anyone to mint a token until the `MAX_SUPPLY` of 1000 is reached. `tokenURI` returns base64-encoded JSON that includes a base64-encoded SVG image.
-- **test/concentric.js** – Hardhat test suite validating core functionality.
-- **hardhat.config.js** – Project configuration specifying the Solidity compiler version.
+## Usage
 
-## Requirements
+Serve `index.html` over HTTPS (required for camera access) and open on mobile.
 
-- [Node.js](https://nodejs.org/) (v16 or later is recommended)
-- npm (installed with Node.js)
-
-## Install
-
-```bash
-npm install
 ```
-
-## Compile
-
-```bash
-npm run compile
+npx serve .
 ```
-
-## Run Tests
-
-```bash
-npm test
-```
-
-## Local Development
-
-To experiment with the contract locally, start a Hardhat network in one terminal:
-
-```bash
-npx hardhat node
-```
-
-In another terminal you can deploy and interact with the contract using the Hardhat console:
-
-```bash
-npx hardhat console --network localhost
-```
-
-Inside the console:
-
-```javascript
-const factory = await ethers.getContractFactory("ConcentricCircles");
-const cc = await factory.deploy();
-await cc.mint();           // mint token #1
-await cc.tokenURI(1);      // view the generated metadata
-```
-
-## License
-
-Released under the [MIT License](https://opensource.org/licenses/MIT).
