@@ -236,6 +236,11 @@ let segmenter,paused=false,lastMaskInt=null,maskW=0,maskH=0;
 let fc=0,lt=performance.now(),frame=0;
 let facingMode='environment';
 let lastVideoTime=-1;
+let delegatePreference='GPU';
+let fallbackTried=false;
+let zeroStreak=0;
+let reinitInFlight=false;
+let visionTasks=null;
 
 function dbg(msg){debugEl.textContent=msg;}
 
@@ -261,19 +266,47 @@ async function initSegmenter(){
   const vision=await FilesetResolver.forVisionTasks(
     'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.12/wasm'
   );
+  visionTasks=vision;
+  try{
+    await buildSegmenter(visionTasks,delegatePreference);
+  }catch(err){
+    dbg('GPU init failed: '+err.message);
+    delegatePreference='CPU';
+    await buildSegmenter(visionTasks,delegatePreference);
+  }
+  loadMsg.textContent='NEURAL MESH LOADED';
+}
+
+async function buildSegmenter(vision,delegate){
   loadMsg.textContent='LOADING NEURAL MODEL...';
-  dbg('loading deeplab_v3 model...');
+  dbg('loading deeplab_v3 model ('+delegate+')...');
+  if(segmenter&&segmenter.close)segmenter.close();
   segmenter=await ImageSegmenter.createFromOptions(vision,{
     baseOptions:{
       modelAssetPath:'https://storage.googleapis.com/mediapipe-models/image_segmenter/deeplab_v3/float32/latest/deeplab_v3.tflite',
-      delegate:'GPU'
+      delegate
     },
     runningMode:'VIDEO',
     outputCategoryMask:true,
     outputConfidenceMasks:false
   });
-  dbg('segmenter ready');
-  loadMsg.textContent='NEURAL MESH LOADED';
+  dbg('segmenter ready ('+delegate+')');
+}
+
+async function fallbackToCpu(vision,reason){
+  if(reinitInFlight||fallbackTried)return;
+  reinitInFlight=true;
+  fallbackTried=true;
+  delegatePreference='CPU';
+  dbg('fallback->CPU: '+reason);
+  try{
+    await buildSegmenter(vision,'CPU');
+    zeroStreak=0;
+  }catch(err){
+    dbg('CPU fallback failed: '+err.message);
+  }finally{
+    reinitInFlight=false;
+  }
 }
 
 function renderFrame(maskInt,w,h){
@@ -379,14 +412,19 @@ function loop(){
             statusEl.textContent='TRACKING '+cats.size+' LAYER'+(cats.size>1?'S':'');
             statusEl.style.color='#0fa';
             dbg('#'+segCount+' '+maskW+'x'+maskH+' nz='+nonZero+' cats=['+[...cats]+'] mid=['+sample+']');
+            zeroStreak=0;
           }else{
             statusEl.textContent='SCANNING...';
             statusEl.style.color='#555';
             dbg('#'+segCount+' '+maskW+'x'+maskH+' ALL ZERO mid=['+sample+']');
+            zeroStreak++;
           }
 
           renderFrame(lastMaskInt,maskW,maskH);
           result.close();
+          if(zeroStreak>30&&visionTasks){
+            fallbackToCpu(visionTasks,'category mask stayed empty');
+          }
         }else{
           dbg('no categoryMask keys='+(result?Object.keys(result):'null'));
           renderVideoOnly();
