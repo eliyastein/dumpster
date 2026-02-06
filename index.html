@@ -232,7 +232,7 @@ const video=document.getElementById('cam'),
   loadingEl=document.getElementById('loading'),
   loadMsg=loadingEl.querySelector('p');
 
-let segmenter,paused=false,lastMask=null,lastMaskInt=null,maskW=0,maskH=0;
+let segmenter,paused=false,lastMaskInt=null,maskW=0,maskH=0;
 let fc=0,lt=performance.now(),frame=0;
 let facingMode='environment';
 let lastVideoTime=-1;
@@ -358,25 +358,22 @@ function loop(){
       try{
         const result=segmenter.segmentForVideo(video,now);
         if(result&&result.categoryMask){
-          const mask=result.categoryMask.getAsFloat32Array();
+          const mask=result.categoryMask.getAsUint8Array();
           maskW=result.categoryMask.width;
           maskH=result.categoryMask.height;
 
-          const intMask=new Uint8Array(mask.length);
           const cats=new Set();
           let nonZero=0;
           for(let i=0;i<mask.length;i++){
-            const v=Math.round(mask[i]*255);
-            intMask[i]=v;
+            const v=mask[i];
             if(v>0){nonZero++;cats.add(v);}
           }
-          lastMask=new Float32Array(mask);
-          lastMaskInt=intMask;
+          lastMaskInt=new Uint8Array(mask);
           segCount++;
 
           const cx=Math.floor(mask.length/2);
           const sample=[mask[cx-2],mask[cx-1],mask[cx],mask[cx+1],mask[cx+2]]
-            .map(v=>v.toFixed(4)).join(',');
+            .map(v=>v.toString()).join(',');
 
           if(nonZero>0){
             statusEl.textContent='TRACKING '+cats.size+' LAYER'+(cats.size>1?'S':'');
@@ -388,7 +385,7 @@ function loop(){
             dbg('#'+segCount+' '+maskW+'x'+maskH+' ALL ZERO mid=['+sample+']');
           }
 
-          renderFrame(intMask,maskW,maskH);
+          renderFrame(lastMaskInt,maskW,maskH);
           result.close();
         }else{
           dbg('no categoryMask keys='+(result?Object.keys(result):'null'));
