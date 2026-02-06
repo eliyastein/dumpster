@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>BIOMECH::SIGHT</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{
+  background:#000;overflow:hidden;height:100dvh;width:100vw;
+  font-family:'Courier New',monospace;touch-action:none;
+  user-select:none;-webkit-user-select:none;
+}
+video{
+  position:fixed;top:0;left:0;width:100%;height:100%;
+  object-fit:cover;z-index:0;
+}
+canvas{
+  position:fixed;top:0;left:0;width:100%;height:100%;
+  object-fit:cover;image-rendering:pixelated;
+  pointer-events:none;will-change:transform;
+}
+#overlay{z-index:1;mix-blend-mode:screen;opacity:.8}
+#highlight{z-index:2;mix-blend-mode:screen;opacity:0;transition:opacity .3s}
+#highlight.visible{opacity:1;animation:flash .5s ease-out}
+@keyframes flash{0%{opacity:.9}100%{opacity:.5}}
+
+/* Scanlines */
+.scanlines{
+  position:fixed;top:0;left:0;width:100%;height:100%;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.12) 2px,rgba(0,0,0,.12) 4px);
+  pointer-events:none;z-index:10;
+}
+/* Vignette */
+.vignette{
+  position:fixed;top:0;left:0;width:100%;height:100%;
+  background:radial-gradient(ellipse at center,transparent 40%,rgba(0,0,0,.85) 100%);
+  pointer-events:none;z-index:11;
+}
+/* Scan beam */
+.scan-beam{
+  position:fixed;left:0;width:100%;height:2px;
+  background:linear-gradient(90deg,transparent 5%,rgba(0,255,170,.5) 50%,transparent 95%);
+  z-index:12;pointer-events:none;animation:beam 4s linear infinite;
+  box-shadow:0 0 12px rgba(0,255,170,.3);
+}
+@keyframes beam{0%{top:-2px}100%{top:100%}}
+
+/* Corner reticle */
+.reticle{position:fixed;pointer-events:none;z-index:13}
+.reticle::before,.reticle::after{
+  content:'';position:absolute;background:#0fa;
+}
+.r-tl{top:16px;left:16px}.r-tl::before{width:28px;height:1px;top:0;left:0}
+.r-tl::after{width:1px;height:28px;top:0;left:0}
+.r-tr{top:16px;right:16px}.r-tr::before{width:28px;height:1px;top:0;right:0}
+.r-tr::after{width:1px;height:28px;top:0;right:0}
+.r-bl{bottom:16px;left:16px}.r-bl::before{width:28px;height:1px;bottom:0;left:0}
+.r-bl::after{width:1px;height:28px;bottom:0;left:0}
+.r-br{bottom:16px;right:16px}.r-br::before{width:28px;height:1px;bottom:0;right:0}
+.r-br::after{width:1px;height:28px;bottom:0;right:0}
+
+/* HUD */
+#hud{
+  position:fixed;top:0;left:0;width:100%;padding:20px 22px;
+  z-index:20;display:flex;justify-content:space-between;align-items:flex-start;
+}
+#title{
+  color:#0fa;font-size:13px;letter-spacing:5px;
+  text-shadow:0 0 8px #0fa,0 0 20px rgba(0,255,170,.4);
+  animation:pulse 3s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{opacity:.6}50%{opacity:1}}
+#status{color:#555;font-size:9px;letter-spacing:2px;margin-top:4px}
+#fps{color:#444;font-size:9px;letter-spacing:1px}
+
+/* Buttons */
+#controls{
+  position:fixed;bottom:36px;left:0;width:100%;
+  display:flex;justify-content:center;gap:14px;z-index:20;
+}
+.btn{
+  background:rgba(0,15,12,.75);border:1px solid #0fa;color:#0fa;
+  padding:13px 28px;font-family:'Courier New',monospace;font-size:12px;
+  letter-spacing:3px;cursor:pointer;backdrop-filter:blur(4px);
+  box-shadow:0 0 12px rgba(0,255,170,.25),inset 0 0 12px rgba(0,255,170,.08);
+  transition:all .2s;
+}
+.btn:active{background:rgba(0,255,170,.15);box-shadow:0 0 20px rgba(0,255,170,.5)}
+.btn.paused{border-color:#f80;color:#f80;box-shadow:0 0 12px rgba(255,136,0,.25),inset 0 0 12px rgba(255,136,0,.08)}
+.btn-sm{padding:13px 16px}
+
+/* Enhance panel */
+#enhancePanel{
+  display:none;position:fixed;z-index:25;
+  background:rgba(0,8,6,.92);border:1px solid #0fa;
+  padding:14px 16px;min-width:190px;max-width:240px;
+  box-shadow:0 0 20px rgba(0,255,170,.35),inset 0 0 25px rgba(0,255,170,.04);
+  backdrop-filter:blur(6px);
+}
+#enhancePanel.visible{display:block;animation:panel-in .4s ease-out}
+@keyframes panel-in{0%{opacity:0;transform:scale(.7) translateY(10px)}100%{opacity:1;transform:scale(1) translateY(0)}}
+#enhancePanel h3{
+  color:#0fa;font-size:9px;letter-spacing:3px;margin-bottom:6px;
+  padding-bottom:5px;border-bottom:1px solid rgba(0,255,170,.25);
+}
+.obj-label{
+  color:#0fa;text-transform:uppercase;letter-spacing:2px;font-size:15px;
+  margin:6px 0;text-shadow:0 0 6px #0fa;
+}
+.obj-info{
+  color:#7eb;font-size:10px;line-height:1.7;letter-spacing:1px;
+  white-space:pre-line;min-height:40px;
+}
+
+/* Tap ring */
+.tap-ring{
+  position:fixed;pointer-events:none;z-index:22;
+  border:1px solid #0fa;border-radius:50%;
+  transform:translate(-50%,-50%);
+  animation:ring .7s ease-out forwards;
+}
+@keyframes ring{
+  0%{width:8px;height:8px;opacity:1;border-width:2px}
+  100%{width:100px;height:100px;opacity:0;border-width:1px}
+}
+.tap-ring:nth-child(odd){animation-duration:.5s;border-color:rgba(0,255,170,.5)}
+
+/* Loading */
+#loading{
+  position:fixed;top:0;left:0;width:100%;height:100%;background:#000;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  z-index:100;transition:opacity .6s;
+}
+#loading.hidden{opacity:0;pointer-events:none}
+#loading h1{
+  color:#0fa;font-size:18px;letter-spacing:8px;margin-bottom:24px;
+  text-shadow:0 0 25px #0fa;
+}
+.load-bar{width:180px;height:1px;background:#111;overflow:hidden}
+.load-bar::after{
+  content:'';display:block;width:35%;height:100%;background:#0fa;
+  animation:loading 1.2s ease-in-out infinite;
+}
+@keyframes loading{0%{transform:translateX(-100%)}100%{transform:translateX(500%)}}
+#loading p{color:#444;font-size:9px;margin-top:14px;letter-spacing:3px}
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <h1>BIOMECH::SIGHT</h1>
+  <div class="load-bar"></div>
+  <p>INITIALIZING NEURAL MESH</p>
+</div>
+
+<video id="cam" autoplay playsinline muted></video>
+<canvas id="overlay"></canvas>
+<canvas id="highlight"></canvas>
+
+<div class="scanlines"></div>
+<div class="vignette"></div>
+<div class="scan-beam"></div>
+<div class="reticle r-tl"></div>
+<div class="reticle r-tr"></div>
+<div class="reticle r-bl"></div>
+<div class="reticle r-br"></div>
+
+<div id="hud">
+  <div>
+    <div id="title">BIOMECH::SIGHT</div>
+    <div id="status">SCANNING</div>
+  </div>
+  <div id="fps"></div>
+</div>
+
+<div id="controls">
+  <button class="btn btn-sm" id="flipBtn">&#x21C5;</button>
+  <button class="btn" id="pauseBtn">&#9632; PAUSE</button>
+</div>
+
+<div id="enhancePanel">
+  <h3>&#9655; ANALYSIS</h3>
+  <div class="obj-label" id="objLabel"></div>
+  <div class="obj-info" id="objInfo"></div>
+</div>
+
+<script type="module">
+import {ImageSegmenter,FilesetResolver} from
+  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs';
+
+const LABELS=['BACKGROUND','AEROPLANE','BICYCLE','BIRD','BOAT','BOTTLE',
+  'BUS','CAR','CAT','CHAIR','COW','TABLE','DOG','HORSE',
+  'MOTORBIKE','PERSON','PLANT','SHEEP','SOFA','TRAIN','MONITOR'];
+
+const COLORS=[
+  null,[0,220,180],[160,255,80],[220,180,0],[0,160,220],[180,0,220],
+  [220,100,0],[0,220,100],[220,0,140],[120,200,40],[0,180,160],
+  [180,120,40],[220,60,180],[140,220,0],[220,160,40],[0,255,200],
+  [100,220,40],[200,200,40],[140,40,220],[0,200,140],[120,40,220]
+];
+
+const INFO={
+  PERSON:'BIOMETRIC LOCK ACQUIRED\nHEAT SIGNATURE: CONFIRMED\nTHREAT LEVEL: NOMINAL\nSKELETAL MESH: MAPPED',
+  CAR:'VEHICLE IDENTIFIED\nPROPULSION: COMBUSTION\nVELOCITY: STATIONARY\nARMOR: CIVILIAN',
+  CAT:'ORGANISM: FELIS CATUS\nTHERMAL: WARM-BLOODED\nDISPOSITION: AUTONOMOUS\nTHREAT: NEGLIGIBLE',
+  DOG:'ORGANISM: CANIS LUPUS\nBOND STATUS: DOMESTICATED\nALERT LEVEL: PASSIVE\nTHREAT: LOW',
+  CHAIR:'STRUCTURE: SEATING UNIT\nMATERIAL: COMPOSITE\nLOAD BEARING: NOMINAL\nINTEGRITY: STABLE',
+  BOTTLE:'CONTAINER CLASSIFIED\nCONTENTS: UNVERIFIED\nSEAL: UNKNOWN\nHAZMAT: NEGATIVE',
+  TABLE:'SURFACE: HORIZONTAL\nSTRUCTURE: LOAD-BEARING\nMATERIAL: COMPOSITE\nSTABILITY: CONFIRMED',
+  MONITOR:'DISPLAY DEVICE\nSIGNAL: ACTIVE\nRESOLUTION: SCANNING\nEMISSION: PHOTONIC',
+  SOFA:'SEATING ARRAY\nCAPACITY: MULTI-UNIT\nMATERIAL: TEXTILE\nCOMFORT INDEX: HIGH',
+  PLANT:'KINGDOM: PLANTAE\nPHOTOSYNTHESIS: ACTIVE\nO2 OUTPUT: NOMINAL\nSTATUS: THRIVING',
+  BICYCLE:'VEHICLE: HUMAN-POWERED\nGEARS: UNKNOWN\nVELOCITY: ZERO\nMASS: LOW',
+  BIRD:'CLASS: AVES\nFLIGHT: PROBABLE\nWINGSPAN: SCANNING\nALTITUDE: GROUND',
+  BOAT:'WATERCRAFT DETECTED\nDISPLACEMENT: UNKNOWN\nHULL: SCANNING\nSTATUS: DOCKED',
+  BUS:'MASS TRANSIT UNIT\nCAPACITY: HIGH\nROUTE: UNKNOWN\nSTATUS: IDLE',
+  COW:'ORGANISM: BOS TAURUS\nMASS: SIGNIFICANT\nDOMESTICATION: FULL\nOUTPUT: DAIRY',
+  HORSE:'ORGANISM: EQUUS CABALLUS\nPOWER OUTPUT: 1HP\nGAIT: STATIONARY\nSTATUS: CALM',
+  MOTORBIKE:'TWO-WHEEL POWERED\nENGINE: SCANNING\nRISK FACTOR: ELEVATED\nSTATUS: PARKED',
+  SHEEP:'ORGANISM: OVIS ARIES\nWOOL DENSITY: HIGH\nHERD STATUS: UNKNOWN\nTHREAT: ZERO',
+  TRAIN:'RAIL TRANSPORT\nMASS: EXTREME\nPROPULSION: SCANNING\nSCHEDULE: UNKNOWN',
+  AEROPLANE:'AIRCRAFT DETECTED\nALTITUDE: GROUND LEVEL\nENGINES: SCANNING\nCLEARANCE: UNKNOWN',
+  BACKGROUND:'ENVIRONMENT SCAN\nCOMPOSITION: AMBIENT\nNO TARGET LOCKED\nAWAITING INPUT'
+};
+
+const video=document.getElementById('cam'),
+  canvas=document.getElementById('overlay'),
+  hlCanvas=document.getElementById('highlight'),
+  ctx=canvas.getContext('2d',{willReadFrequently:true}),
+  hlCtx=hlCanvas.getContext('2d'),
+  pauseBtn=document.getElementById('pauseBtn'),
+  flipBtn=document.getElementById('flipBtn'),
+  panel=document.getElementById('enhancePanel'),
+  objLabel=document.getElementById('objLabel'),
+  objInfo=document.getElementById('objInfo'),
+  fpsEl=document.getElementById('fps'),
+  statusEl=document.getElementById('status'),
+  loadingEl=document.getElementById('loading');
+
+let segmenter,paused=false,lastMask=null,maskW=0,maskH=0;
+let fc=0,lt=performance.now(),frame=0;
+let facingMode='environment';
+
+// --- Camera ---
+async function initCamera(){
+  const stream=await navigator.mediaDevices.getUserMedia({
+    video:{facingMode,width:{ideal:480},height:{ideal:640}},audio:false
+  });
+  video.srcObject=stream;
+  await video.play();
+  canvas.width=video.videoWidth;
+  canvas.height=video.videoHeight;
+  hlCanvas.width=video.videoWidth;
+  hlCanvas.height=video.videoHeight;
+}
+
+// --- MediaPipe ---
+async function initSegmenter(){
+  const vision=await FilesetResolver.forVisionTasks(
+    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm'
+  );
+  segmenter=await ImageSegmenter.createFromOptions(vision,{
+    baseOptions:{
+      modelAssetPath:'https://storage.googleapis.com/mediapipe-models/image_segmenter/deeplab_v3/float32/1/deeplab_v3.tflite',
+      delegate:'GPU'
+    },
+    runningMode:'VIDEO',
+    outputCategoryMask:true
+  });
+}
+
+// --- Render segmentation overlay ---
+function renderOverlay(mask,w,h){
+  const img=ctx.createImageData(w,h);
+  const d=img.data;
+  const t=frame*.02;
+  for(let i=0;i<mask.length;i++){
+    const cat=mask[i];
+    const x=i%w,y=(i/w)|0;
+    const right=x<w-1?mask[i+1]:cat;
+    const down=y<h-1?mask[i+w]:cat;
+    const isEdge=right!==cat||down!==cat;
+    const pi=i*4;
+    if(isEdge){
+      // Glowing edge
+      const c=COLORS[cat]||COLORS[right!==cat?(right||1):1]||[0,255,170];
+      d[pi]=c[0];d[pi+1]=c[1];d[pi+2]=c[2];d[pi+3]=200;
+    }else if(cat>0){
+      const c=COLORS[cat];
+      const p=Math.sin(t+x*.015+y*.015)*.3+.7;
+      d[pi]=(c[0]*p)|0;d[pi+1]=(c[1]*p)|0;d[pi+2]=(c[2]*p)|0;d[pi+3]=30;
+    }
+  }
+  ctx.putImageData(img,0,0);
+}
+
+// --- Map click to mask coords (accounting for object-fit:cover) ---
+function clientToMask(cx,cy){
+  const rect=canvas.getBoundingClientRect();
+  const cw=rect.width,ch=rect.height,nw=canvas.width,nh=canvas.height;
+  const scale=Math.max(cw/nw,ch/nh);
+  const ox=(nw*scale-cw)/2,oy=(nh*scale-ch)/2;
+  const mx=Math.round(((cx-rect.left)+ox)/scale);
+  const my=Math.round(((cy-rect.top)+oy)/scale);
+  return[Math.max(0,Math.min(mx,maskW-1)),Math.max(0,Math.min(my,maskH-1))];
+}
+
+// --- Typewriter ---
+function typewrite(el,text,speed=18){
+  el.textContent='';let i=0;
+  const id=setInterval(()=>{
+    el.textContent+=text[i];i++;
+    if(i>=text.length)clearInterval(id);
+  },speed);
+}
+
+// --- Main loop ---
+function loop(){
+  if(!paused&&segmenter){
+    const now=performance.now();
+    fc++;
+    if(now-lt>1000){fpsEl.textContent=fc+'FPS';fc=0;lt=now;}
+    try{
+      const result=segmenter.segmentForVideo(video,now);
+      if(result.categoryMask){
+        const m=result.categoryMask.getAsUint8Array();
+        maskW=result.categoryMask.width;
+        maskH=result.categoryMask.height;
+        lastMask=new Uint8Array(m);
+        renderOverlay(lastMask,maskW,maskH);
+        result.categoryMask.close();
+      }
+    }catch(e){}
+    frame++;
+  }
+  requestAnimationFrame(loop);
+}
+
+// --- Pause ---
+pauseBtn.addEventListener('click',()=>{
+  paused=!paused;
+  if(paused){
+    video.pause();
+    pauseBtn.innerHTML='&#9654; RESUME';
+    pauseBtn.classList.add('paused');
+    statusEl.textContent='FROZEN \u2014 TAP TO ENHANCE';
+    statusEl.style.color='#f80';
+  }else{
+    video.play();
+    pauseBtn.innerHTML='&#9632; PAUSE';
+    pauseBtn.classList.remove('paused');
+    statusEl.textContent='SCANNING';
+    statusEl.style.color='';
+    panel.classList.remove('visible');
+    hlCanvas.classList.remove('visible');
+    hlCtx.clearRect(0,0,hlCanvas.width,hlCanvas.height);
+  }
+});
+
+// --- Flip camera ---
+flipBtn.addEventListener('click',async()=>{
+  facingMode=facingMode==='environment'?'user':'environment';
+  video.srcObject.getTracks().forEach(t=>t.stop());
+  await initCamera();
+});
+
+// --- Tap to enhance ---
+document.addEventListener('click',e=>{
+  if(!paused||!lastMask)return;
+  if(e.target.closest('#controls'))return;
+
+  // Tap ring effect
+  for(let r=0;r<2;r++){
+    const ring=document.createElement('div');
+    ring.className='tap-ring';
+    ring.style.left=e.clientX+'px';ring.style.top=e.clientY+'px';
+    if(r)ring.style.animationDelay='.1s';
+    document.body.appendChild(ring);
+    setTimeout(()=>ring.remove(),800);
+  }
+
+  const[mx,my]=clientToMask(e.clientX,e.clientY);
+  const cat=lastMask[my*maskW+mx]||0;
+  const label=LABELS[cat]||'UNKNOWN';
+
+  // Highlight tapped segment
+  const img=hlCtx.createImageData(maskW,maskH);
+  const d=img.data;
+  const c=COLORS[cat]||[0,255,170];
+  for(let i=0;i<lastMask.length;i++){
+    if(lastMask[i]===cat){
+      const pi=i*4;
+      d[pi]=c[0];d[pi+1]=c[1];d[pi+2]=c[2];d[pi+3]=90;
+    }
+  }
+  hlCtx.putImageData(img,0,0);
+  hlCanvas.classList.remove('visible');
+  void hlCanvas.offsetWidth; // reflow for re-trigger animation
+  hlCanvas.classList.add('visible');
+
+  // Enhance panel
+  objLabel.textContent='\u25C9 '+label;
+  const infoText=INFO[label]||'TYPE: '+label+'\nSTATUS: CLASSIFIED\nDATA: INSUFFICIENT';
+  typewrite(objInfo,infoText);
+
+  const px=Math.min(e.clientX+12,window.innerWidth-250);
+  const py=Math.min(e.clientY-60,window.innerHeight-160);
+  panel.style.left=px+'px';panel.style.top=Math.max(10,py)+'px';
+  panel.classList.remove('visible');
+  void panel.offsetWidth;
+  panel.classList.add('visible');
+});
+
+// --- Boot ---
+async function boot(){
+  try{
+    await Promise.all([initCamera(),initSegmenter()]);
+    loadingEl.classList.add('hidden');
+    setTimeout(()=>loadingEl.style.display='none',600);
+    loop();
+  }catch(err){
+    loadingEl.querySelector('p').textContent='ERR: '+err.message;
+    loadingEl.querySelector('p').style.color='#f44';
+  }
+}
+boot();
+</script>
+</body>
+</html>
