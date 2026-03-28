@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Line Grid Drawing</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #1a1a2e;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: sans-serif;
+      color: #eee;
+      user-select: none;
+    }
+    h1 {
+      margin-bottom: 12px;
+      font-size: 1.2rem;
+      letter-spacing: 0.1em;
+      opacity: 0.7;
+    }
+    #hint {
+      font-size: 0.8rem;
+      opacity: 0.45;
+      margin-bottom: 16px;
+    }
+    canvas {
+      cursor: pointer;
+      border-radius: 6px;
+      box-shadow: 0 0 40px rgba(0,0,0,0.6);
+    }
+    #controls {
+      margin-top: 14px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    button {
+      background: #16213e;
+      border: 1px solid #0f3460;
+      color: #eee;
+      padding: 6px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: background 0.15s;
+    }
+    button:hover { background: #0f3460; }
+    label { font-size: 0.85rem; opacity: 0.7; display: flex; align-items: center; gap: 6px; }
+    input[type=color] { cursor: pointer; border: none; background: none; width: 28px; height: 28px; padding: 0; }
+  </style>
+</head>
+<body>
+  <h1>Line Grid</h1>
+  <div id="hint">Click or drag to toggle line angles &bull; Draw pictures!</div>
+  <canvas id="c"></canvas>
+  <div id="controls">
+    <button id="btnClear">Clear</button>
+    <button id="btnInvert">Invert All</button>
+    <label>Color <input type="color" id="colorPick" value="#e94560"></label>
+    <label>Size
+      <select id="gridSize">
+        <option value="20">Small (20px)</option>
+        <option value="30" selected>Medium (30px)</option>
+        <option value="40">Large (40px)</option>
+        <option value="50">XL (50px)</option>
+      </select>
+    </label>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+
+    let CELL = 30;
+    let cols, rows;
+    // grid[r][c] = false → '\', true → '/'
+    let grid = [];
+    let lineColor = '#e94560';
+    let painting = false;
+    let lastToggled = null;
+
+    function resize() {
+      const maxW = Math.min(window.innerWidth - 32, 800);
+      const maxH = Math.min(window.innerHeight - 180, 640);
+      cols = Math.floor(maxW / CELL);
+      rows = Math.floor(maxH / CELL);
+      canvas.width = cols * CELL;
+      canvas.height = rows * CELL;
+
+      // preserve existing state where possible
+      const oldGrid = grid;
+      grid = Array.from({ length: rows }, (_, r) =>
+        Array.from({ length: cols }, (_, c) =>
+          oldGrid[r] && oldGrid[r][c] !== undefined ? oldGrid[r][c] : false
+        )
+      );
+      draw();
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Background grid dots
+      ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      for (let r = 0; r <= rows; r++) {
+        for (let c = 0; c <= cols; c++) {
+          ctx.beginPath();
+          ctx.arc(c * CELL, r * CELL, 1.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // Lines
+      ctx.strokeStyle = lineColor;
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+
+      const pad = Math.round(CELL * 0.18);
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const x = c * CELL;
+          const y = r * CELL;
+          ctx.beginPath();
+          if (grid[r][c]) {
+            // '/' direction
+            ctx.moveTo(x + pad, y + CELL - pad);
+            ctx.lineTo(x + CELL - pad, y + pad);
+          } else {
+            // '\' direction
+            ctx.moveTo(x + pad, y + pad);
+            ctx.lineTo(x + CELL - pad, y + CELL - pad);
+          }
+          ctx.stroke();
+        }
+      }
+    }
+
+    function cellAt(px, py) {
+      const c = Math.floor(px / CELL);
+      const r = Math.floor(py / CELL);
+      if (r >= 0 && r < rows && c >= 0 && c < cols) return { r, c };
+      return null;
+    }
+
+    function toggle(r, c) {
+      const key = `${r},${c}`;
+      if (key === lastToggled) return;
+      lastToggled = key;
+      grid[r][c] = !grid[r][c];
+      draw();
+    }
+
+    function pointerPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      const src = e.touches ? e.touches[0] : e;
+      return { px: src.clientX - rect.left, py: src.clientY - rect.top };
+    }
+
+    canvas.addEventListener('mousedown', e => {
+      painting = true;
+      lastToggled = null;
+      const { px, py } = pointerPos(e);
+      const cell = cellAt(px, py);
+      if (cell) toggle(cell.r, cell.c);
+    });
+
+    canvas.addEventListener('mousemove', e => {
+      if (!painting) return;
+      const { px, py } = pointerPos(e);
+      const cell = cellAt(px, py);
+      if (cell) toggle(cell.r, cell.c);
+    });
+
+    window.addEventListener('mouseup', () => { painting = false; lastToggled = null; });
+
+    canvas.addEventListener('touchstart', e => {
+      e.preventDefault();
+      painting = true;
+      lastToggled = null;
+      const { px, py } = pointerPos(e);
+      const cell = cellAt(px, py);
+      if (cell) toggle(cell.r, cell.c);
+    }, { passive: false });
+
+    canvas.addEventListener('touchmove', e => {
+      e.preventDefault();
+      if (!painting) return;
+      const { px, py } = pointerPos(e);
+      const cell = cellAt(px, py);
+      if (cell) toggle(cell.r, cell.c);
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', () => { painting = false; lastToggled = null; });
+
+    document.getElementById('btnClear').addEventListener('click', () => {
+      grid = Array.from({ length: rows }, () => Array(cols).fill(false));
+      draw();
+    });
+
+    document.getElementById('btnInvert').addEventListener('click', () => {
+      grid = grid.map(row => row.map(v => !v));
+      draw();
+    });
+
+    document.getElementById('colorPick').addEventListener('input', e => {
+      lineColor = e.target.value;
+      draw();
+    });
+
+    document.getElementById('gridSize').addEventListener('change', e => {
+      CELL = parseInt(e.target.value);
+      resize();
+    });
+
+    window.addEventListener('resize', resize);
+    resize();
+  </script>
+</body>
+</html>
